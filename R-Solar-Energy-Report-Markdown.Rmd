@@ -1,0 +1,613 @@
+---
+title: "Group H - Report"
+author: "Andres Ayala, Cesar Daniel Bolfeta, Federico Chiari, Rebeccah Cohen, Tsitsino Dalakishvili, Marianina Gutierrez, Raquel Ordonez and Nicolas Ortiz"
+date: "06/11/2021"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    math: katex
+  html_document:
+    fig_caption: yes
+    theme: !expr bslib::bs_theme(version = 4)
+  pdf_document:
+    fig_caption: yes
+    
+    prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    math: katex
+    
+params:
+  station: ACME
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r, include=FALSE}
+folder_path<- "C:/Users/raque/Desktop/IE/MBD/Period 2/R Programming/00_Group Project/"
+  
+path_main_dataset <- file.path(folder_path,"solar_dataset.RData")
+path_station_info <- file.path(folder_path,"station_info.csv")
+path_add_vars <- file.path(folder_path,"additional_variables.RData")
+path_add_fun <- file.path(folder_path, "Additional Functions.R")
+source(path_add_fun)
+```
+
+## Table of Contents
+
+```{r toc, echo=FALSE}
+path_report <- file.path(folder_path,"/FinalReportGroupH.Rmd")
+render_toc(path_report)
+```
+
+The aim of this report is to analyze and predict [data](https://www.kaggle.com/c/ams-2014-solar-energy-prediction-contest/data) from different solar energy stations in Oklahoma.
+
+```{r, include =FALSE}
+#### Loading libraries ####
+
+library(tidyverse)
+library(corrplot)
+library(plotly)
+library(ggcorrplot)
+library(ggiraph)
+library(shiny)
+library(leaflet)
+library(lubridate)
+library(plyr)
+library(dplyr)
+library(outliers)
+library(ggplot2)
+library(reshape)
+library(data.table)
+library(tidyr)
+library(ggridges)
+library(e1071)
+library(foreach)
+library(doParallel)
+library(kableExtra)
+
+#### Reading the Data ####
+
+main_dataset <- readRDS(path_main_dataset)
+
+station_info <- read.csv(path_station_info)
+
+
+add_vars <- readRDS(path_add_vars)
+
+```
+
+## EDA
+
+### EDA - 1. Fix the formatting of the dates
+
+We fixed the formatting of the dates on both datasets.
+```{r, include=FALSE}
+
+main_dataset$Date <- as.Date(main_dataset$Date, format = "%Y%m%d")
+add_vars$Date <- as.Date(add_vars$Date, format = "%Y%m%d")
+
+```
+
+### EDA - 2. Define the target variables. Train - test split
+
+We split the main dataset into train and test order to predict the target variables which are the stations (ACME - WYNO).
+```{r, include=FALSE}
+main_train <- main_dataset[!is.na(main_dataset$ACME),]
+
+main_train_head<- head(main_train)
+main_test <- main_dataset[is.na(main_dataset$ACME),c(1, 100:456)]
+
+main_test_head<- head(main_test)
+```
+
+First few rows of the training set
+
+```{r}
+kbl(main_train_head) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+nrow(main_train)
+```
+
+First few rows of the test set
+
+```{r}
+kbl(main_test_head) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+nrow(main_test)
+```
+
+
+### EDA - 3. Counting NAs in the data
+
+Used the columns and is.na functions to view NA counts in the data. there were no nulls in the main dataset or in station info however there were many in additional variables.
+```{r, include=FALSE}
+
+
+colSums(is.na(main_dataset))
+# No missing values
+colSums(is.na(main_train))
+colSums(is.na(main_test))
+# NAs in target variable match the length of the test dataset = 1796
+
+colSums(is.na(station_info))
+# No missing values
+
+colSums(is.na(add_vars))
+# Many missing values
+
+
+```
+
+
+```{r}
+colSums(is.na(add_vars))
+```
+
+
+### EDA - 4. Outlier Analysis 
+
+First, we try to look for values, for every station, that could be potential outliers. Then, we plotted the boxplots and we didn't find any.
+
+```{r, include=FALSE}
+meltTrainData <- melt(main_train[,1:15], id="Date")
+```
+
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: ACME -BUFF") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+```
+
+
+```{r, include = FALSE}
+meltTrainData <- melt(main_train[,c(1,16:31)], id="Date")
+
+```
+
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: BURB - ELRE") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+```
+
+```{r, include=FALSE}
+meltTrainData <- melt(main_train[,c(1,32:46)], id="Date")
+
+```
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: ERIC - IDAB") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+
+```
+
+```{r, include=FALSE}
+
+meltTrainData <- melt(main_train[,c(1,47:62)], id="Date")
+
+```
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: JAYX - NEWK") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+```
+
+```{r, include=FALSE}
+meltTrainData <- melt(main_train[,c(1,63:77)], id="Date")
+```
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: NINN - SEIL") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+```
+
+```{r, include=FALSE}
+meltTrainData <- melt(main_train[,c(1,78:92)], id="Date")
+
+```
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: SHAW - WATO") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+```
+
+```{r, include=FALSE}
+meltTrainData <- melt(main_train[,c(1,93:98)], id="Date")
+
+```
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplots: WAUR - WOOD") +
+  theme_light()+
+  xlab("Stations")+
+  ylab("Values")
+```
+
+Although the previous boxplots did not show outliers, we wanted to evaluate the station IDAB in detail, since it presents higher values compared to the other stations and we found an observation that is far away from the others.
+
+```{r, include=FALSE}
+meltTrainData <- melt(main_train[,c(1,46)], id="Date")
+
+```
+
+```{r}
+ggplot(meltTrainData) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "lightgreen") +
+  ggtitle("Boxplot: IDAB") +
+  theme_light()+
+  geom_jitter(color="black", size=0.4, alpha=0.9) +
+  xlab("Stations")+
+  ylab("Values")
+```
+
+
+### EDA - 5. Statistics by Column
+
+A closer look at the Stations
+```{r}
+#Station columns - overview 
+sapply(main_train[,2:98], summary)
+```
+
+A closer look at the additional variables
+```{r}
+#Additional variables - overview
+sapply(add_vars[,2:101], summary)
+```
+
+
+### EDA - 6. Correlation Analysis
+
+
+We obtained the correlations of the stations and Principal Components by measuring their pearson distance and repeated the same process for the additional variables only. 
+
+```{r, include=FALSE}
+stations <- main_train[,2:99]
+components <- main_train[,100:456]
+
+c.mat <- correl_matrix(stations, components, from_stat = 1, to_stat = 5, from_var = 1, to_var = 5); c.mat
+p.mat <- sig_matrix(stations, components, from_stat = 1, to_stat = 5, from_var = 1, to_var = 5); p.mat
+
+g <- ggcorrplot(corr = c.mat, method="square", colors=c("#BB4444", "#FFFFFF", "#4477AA"), type="full", lab = TRUE, lab_col = "black", tl.col="black", tl.srt=45, p.mat = p.mat, sig.level = 0.05, insig = "blank", show.diag = TRUE)
+
+```
+This interactive correlation plot shows the linear association between the first 5 stations in alphabetical order and the first five Principal Components in the data, which were the ones with the highest association to the stations.
+```{r}
+ggplotly(g)
+```
+
+
+### EDA - 7. Clustering 
+
+We ran a Kmeans model to obtain clusters of the stations using their longtitude, latitude, and elevation
+
+```{r, include=FALSE}
+test<-main_train[, 1:99]
+test2<-as.data.frame(test) %>%  gather(key="station",value="solar", 2:99)
+test3<-test2 %>% spread(key=Date,value=solar)
+rownames(test3)<-test3$station
+station_kmean2<-kmeans(test3[, names(test3) != "station"], 8, nstart = 10)
+station_kmean2$cluster
+
+stat_clust <- cbind(test3, cluster = station_kmean2$cluster)
+head(stat_clust)
+
+final_clust=merge(station_info,stat_clust,by.x="stid",by.y="station")
+head(final_clust)
+
+```
+
+```{r}
+final_clust %>% ggplot(aes(elon,nlat, color=as.factor(cluster))) +geom_point(size=2)
+```
+
+
+```{r}
+wssplot(test3[, names(test3) != "station"])
+```
+
+
+### EDA - 8. Distribution Plots
+```{r, include=FALSE}
+test<-main_train[, 1:99]
+head(main_train)
+head(test)
+test2<-as.data.frame(test) %>%  gather(key="station",value="solar", 2:99)
+head(stat_clust)
+stationbox<-merge(test2,stat_clust,by="station")
+
+```
+
+```{r}
+stationbox  %>% ggplot(aes(reorder(station,solar_value,FUN=median),solar_value,fill=as.factor(cluster))) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+### EDA - 9. Maps
+
+```{r, include=FALSE}
+# Basic Map
+
+station_info$cluster <- stat_clust$cluster
+
+# Map for the last year in the data
+max(main_train$Date)
+sum(grepl("2007", main_train$Date))
+
+train_07 <- main_train[grepl("2007", main_train$Date), 1:99]
+train_07_month <- train_07
+train_07_month$Date <- as.character(train_07_month$Date)
+
+search_pattern <- c("2007-01-", "2007-02-", "2007-03-", "2007-04-", "2007-05-", "2007-06-", "2007-07-", "2007-08-", "2007-09-", "2007-10-", "2007-11-", "2007-12-")
+
+for (i in 1:12) {
+  train_07_month$Date[grepl(search_pattern[i], train_07_month$Date)]<- rep(month.name[i], sum(grepl(search_pattern[i], train_07_month$Date)))
+}
+
+df_07_map <- add_my_rows(train_07_month)
+df_07_map[2:ncol(df_07_map)] <- lapply(df_07_map[2:ncol(df_07_map)], as.integer)
+
+df_07_map <- merge(df_07_map, station_info, by.x = "Station", by.y = "stid")
+df_07_map
+
+Jan <- leaflet() %>% 
+    addTiles() %>% 
+    addCircleMarkers(
+      lng=df_07_map$elon, lat=df_07_map$nlat,
+      label = df_07_map$Station,
+      radius = get_radius(df_07_map),
+      popup = get_pop_up_info2(df_07_map, "January"),
+      color = getColor2(df_07_map, "January"),
+      fillOpacity = 0.6)
+
+Jul <- leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(
+    lng=df_07_map$elon, lat=df_07_map$nlat,
+    label = df_07_map$Station,
+    radius = get_radius(df_07_map),
+    popup = get_pop_up_info2(df_07_map, "July"),
+    color = getColor2(df_07_map, "July"),
+    fillOpacity = 0.6)
+
+
+```
+
+The following maps show the location of the Stations. 
+The elevation of the stations is represented by the radius of the circle, the higher the elevation, the greater the circle.
+Stations belonging to the same cluster are colored using the same palette.
+Darker colors indicate a greater production of energy.
+
+Map of the stations in January 2007
+```{r}
+Jan
+```
+
+Map of the stations in July 2007
+
+```{r}
+Jul
+```
+
+In the maps we can clearly see that the month of July leads to stations producing more energy, due to the higher exposure to the sun.
+
+## Machine Learning Model
+
+Following the EDA, we expected the first 5 PCs to be the most predictive of the energy production in the solar stations. Additionally, as shown by our analysis through the maps, we also expected the month to be highly predictive, given that it is a proxy indicator of the exposure to sunlight.
+
+We run an SVM model to predict the energy production for each station using a for loop and running a grid search that defined the optimal hyperparameters for each SVM. Our hypotheses were confirmed, given that the month and the first 10 PCs were indeed the most important variables.
+
+```{r, include=FALSE}
+set.seed(1234)
+i<-2
+
+predset <- main_dataset[is.na(main_dataset$ACME)]
+Date<-predset[,1]
+final_predictions<-Date
+head(final_predictions)
+
+for(i in 2:99){
+  main_train <- main_dataset[!is.na(main_dataset$ACME),1:109] 
+  station<-names(main_train)[i]
+  valuemean<-mean(main_train[,get(station)], na.rm = TRUE)
+  main_train[,"Month"]<-month(main_train$Date)
+  main_train$Month
+  
+  # cleaning the dataset
+  dat<-main_train[,get(station)]
+  head(dat)
+  var<-main_train[,c(100:105)]
+  head(var)
+  
+  dat<-cbind(dat,var)
+  as.data.frame(dat)
+  names(dat)[1]<-station
+  head(dat)
+  
+  # row indices for training data (70%)
+  train_index <- sample(1:nrow(dat), 0.7*nrow(dat))  
+  
+  # row indices for validation data (15%)
+  val_index <- sample(setdiff(1:nrow(dat), train_index), 0.15*nrow(dat))  
+  
+  # row indices for test data (15%)
+  test_index <- setdiff(1:nrow(dat), c(train_index, val_index))
+  
+  # split data
+  train <- dat[train_index,] 
+  val <- dat[val_index,] 
+  test  <- dat[test_index,]
+  
+  head(test)
+  
+  train
+  head(train)
+  nrow(train)
+  
+  
+  # Start cluster
+
+  stopImplicitCluster()
+  registerDoParallel(cores = detectCores())
+  
+  ### Define grid
+  c_values <- 10^seq(from = -2, to = 1, by = 0.5)
+  eps_values <- 10^seq(from = -2, to = 0, by = 0.5)
+  gamma_values <- 10^seq(from = -3, to = -1, by = 0.5)
+  
+  
+  ### Compute grid search                                            
+  grid_results <-  foreach (c = c_values, .combine = rbind)%:%        
+    foreach (eps = eps_values, .combine = rbind)%:%       
+    foreach (gamma = gamma_values, .combine = rbind)%dopar%{
+      
+      print(sprintf("Start of c = %s - eps = %s - gamma = %s", c, eps, gamma))
+      
+      # train SVM model with a particular set of hyperparamets
+      model <- svm(get(station) ~ ., data = train, kernel="radial",           
+                   cost = c, epsilon = eps, gamma = gamma)
+      
+      # Get model predictions
+      predictions_train <- predict(model, newdata = train)
+      predictions_val <- predict(model, newdata = val)
+      
+      # Get errors
+      errors_train <- predictions_train - train[,get(station)]                
+      errors_val <- predictions_val - val[,get(station)]                     
+      
+      # Compute Metrics
+      mae_train <- round(mean(abs(errors_train)), 2)                
+      mae_val <- round(mean(abs(errors_val)), 2)                
+      
+      # Build comparison table
+      data.table(c = c, eps = eps, gamma = gamma, 
+                 mae_train = mae_train,
+                 mae_val = mae_val)
+    }
+  
+  # Order results by increasing mse and mae
+  grid_results <- grid_results[order(mae_val, mae_train)]
+  
+  # Check results
+  best <- grid_results[1]
+  
+  ### Train final model
+  # train SVM model with best found set of hyperparamets
+  model <- svm(get(station) ~ ., data = train, kernel="radial",                 
+               cost = best$c, epsilon = best$eps, gamma = best$gamma)
+  
+  # Get model predictions
+  predictions_train <- predict(model, newdata = train)
+  predictions_val <- predict(model, newdata = val)
+  predictions_test <- predict(model, newdata = test)
+  
+  # Get errors
+  errors_train <- predictions_train - train[,get(station)]          
+  errors_val <- predictions_val - val[,get(station)]                  
+  errors_test <- predictions_test - test[,get(station)]               
+  
+  # Compute Metrics
+  mae_train <- round(mean(abs(errors_train)), 2)
+  mae_val <- round(mean(abs(errors_val)), 2)
+  mae_test <- round(mean(abs(errors_test)), 2)
+  
+  ## Summary
+  sprintf("MAE_train = %s - MAE_val = %s - MAE_test = %s", mae_train, mae_val, mae_test)
+  
+  
+  #predictions
+  
+  predset <- main_dataset[is.na(main_dataset[,get(station)]),1:109] 
+  Date<-predset[,1]
+  head(predset)
+  predset[,"Month"]<-month(predset$Date)
+  predset$Month
+  
+  
+  var2<-predset[,get(station)] 
+  head(var2)
+  var3<-predset[,c(100:105)]
+  
+  predset<-cbind(var2,var3)
+  head(predset)
+  
+  as.data.frame(predset)
+  names(predset)[1]<-station
+  predset<-as.data.frame(predset)
+  head(predset)
+  predset[,1]<- valuemean
+  
+  predictions<- predict(model, newdata = predset)
+  head(predictions)
+  
+  predict_df<-as.data.frame(predictions)
+  names(predict_df)[1]<-station
+  head(predict_df)
+  
+  final_predictions<-cbind(final_predictions,predict_df)
+  
+}
+
+```
+
+```{r}
+head(final_predictions)
+```
+
+
+## References
+
+[Changing the position of Table of Contents](https://gist.github.com/gadenbuie/c83e078bf8c81b035e32c3fc0cf04ee8)
+
+[EDA](https://r4ds.had.co.nz/exploratory-data-analysis.html)
+
+[Counting NAs for each column](https://stackoverflow.com/questions/24027605/determine-the-number-of-na-values-in-a-column)
+
+[Corrplot](http://www.sthda.com/english/wiki/visualize-correlation-matrix-using-correlogram)
+
+[Interactive corrplot with slider](https://stackoverflow.com/questions/52420397/bring-out-correlation-with-a-double-ended-range-slider)
+
+[Using Leaflet](https://rstudio.github.io/leaflet/)
+
+[Numerical indexing using aggregation](https://stackoverflow.com/questions/68145836/aggregate-function-in-r-using-column-index-numbers-rather-than-names)
